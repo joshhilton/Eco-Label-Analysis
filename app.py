@@ -150,13 +150,34 @@ with col1:
         licenses_by_country = df_filtered.groupby('company_country', observed=True)['licence_number'].nunique().reset_index()
         licenses_by_country.rename(columns={'licence_number': 'Unique Licenses'}, inplace=True)
 
-        # Handle potential long country names for mapping if needed (UK example)
-        # Simple replacement example (add others if necessary)
-        licenses_by_country['company_country'] = licenses_by_country['company_country'].replace(
-            'United Kingdom of Great Britain and Northern Ireland', 'United Kingdom'
-            )
+        # Ensure 'company_country' is categorical AFTER groupby/reset_index
+        # reset_index might change the dtype depending on pandas version, so ensure it's category here
+        if not pd.api.types.is_categorical_dtype(licenses_by_country['company_country']):
+            licenses_by_country['company_country'] = licenses_by_country['company_country'].astype('category')
 
-        # Create Plotly Choropleth map
+        try:
+            # Define the mapping for renaming
+            rename_map = {
+                'United Kingdom of Great Britain and Northern Ireland': 'United Kingdom'
+                # Add other potential renames needed for mapping here, e.g.
+                # 'Czech Republic': 'Czechia'
+            }
+
+            # Filter the map to only include categories actually present in the current data
+            # This prevents errors if the long UK name isn't in the filtered results
+            current_categories = licenses_by_country['company_country'].cat.categories
+            filtered_rename_map = {k: v for k, v in rename_map.items() if k in current_categories}
+
+            # Apply renaming only if there are categories to rename
+            if filtered_rename_map:
+                licenses_by_country['company_country'] = licenses_by_country['company_country'].cat.rename_categories(filtered_rename_map)
+
+        except Exception as e:
+            # Add a warning if renaming fails for some reason
+            st.warning(f"Could not rename country categories for mapping: {e}")
+
+
+        # Create Plotly Choropleth map (Rest of this section is unchanged)
         fig_map = px.choropleth(
             licenses_by_country,
             locations='company_country',
@@ -172,31 +193,6 @@ with col1:
         st.plotly_chart(fig_map, use_container_width=True)
     else:
         st.info("No data to display map for the current filters.")
-
-with col2:
-    st.subheader("🏷️ Top Product Groups")
-    if not df_filtered.empty:
-        # Aggregate unique licenses per group
-        licenses_by_group = df_filtered.groupby('group_name', observed=True)['licence_number'].nunique().reset_index()
-        licenses_by_group.rename(columns={'licence_number': 'Unique Licenses'}, inplace=True)
-        licenses_by_group = licenses_by_group.sort_values('Unique Licenses', ascending=False).head(15) # Get top 15
-
-        # Create Plotly Bar chart
-        fig_group_bar = px.bar(
-            licenses_by_group,
-            x='Unique Licenses',
-            y='group_name',
-            orientation='h',
-            title="Top 15 Product/Service Groups by Unique Licenses",
-            labels={'group_name': 'Product/Service Group', 'Unique Licenses': 'Number of Unique Licenses'},
-            text='Unique Licenses' # Show values on bars
-        )
-        fig_group_bar.update_layout(yaxis={'categoryorder':'total ascending'}, margin=dict(l=0, r=0, t=30, b=0))
-        fig_group_bar.update_traces(textposition='outside')
-        st.plotly_chart(fig_group_bar, use_container_width=True)
-    else:
-        st.info("No data to display product groups for the current filters.")
-
 
 st.markdown("---")
 
